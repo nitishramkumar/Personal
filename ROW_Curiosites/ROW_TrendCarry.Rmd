@@ -1,0 +1,256 @@
+---
+title: "ROW_Momentum"
+author: "Nitish Ramkumar"
+output: word_document
+---
+
+```{r echo=FALSE}
+suppressMessages(library(rJava))
+options(java.parameters = '-Xmx4g')
+suppressMessages(library(RJDBC))
+suppressMessages(library(quantmod))
+suppressMessages(library(lubridate))
+suppressMessages(library(knitr))
+suppressMessages(library(PerformanceAnalytics))
+suppressMessages(library(dplyr))
+
+setwd("C:/_UCLA/Personal/ROW_Curiosites/")
+read_excel_allsheets <- function(filename) {
+  sheets <- readxl::excel_sheets(filename)
+  x <-    lapply(sheets, function(X) readxl::read_excel(filename, sheet = X))
+  names(x) <- sheets
+  x
+}
+
+
+```
+#Trend trade
+##1 Data Collection
+Data can be collected using yahoo through quantmod. A plot of the monthly returns of the currency can be found below.
+```{r echo=FALSE}
+#Data of Currency from Oanda Quantmod
+# Generating a list of currencies
+ccylist <- c("ARS","BRL","CLP","COP","MXN","HUF","PLN","RUB","TRY","ZAR","IDR","INR","KRW","PHP","THB")
+
+ccyData <- lapply(ccylist,function(x){suppressMessages(getSymbols(paste0(x,"=x"),src="yahoo",from=as.Date("2002-01-01"),auto.assign = FALSE))})
+names(ccyData) <- ccylist
+ccyData <- lapply(ccyData,function(data){data[,ncol(data)]})
+#CalculateReturns
+ccyData.Returns <- lapply(ccyData, monthlyReturn)
+
+#Split into NDFS
+ndfs <- list(ccyData.Returns$ARS,ccyData.Returns$BRL,ccyData.Returns$CLP,ccyData.Returns$COP,ccyData.Returns$IDR,ccyData.Returns$INR,ccyData.Returns$KRW,ccyData.Returns$PHP)
+names(ndfs) <- c("ARS","BRL","CLP","COP","IDR","INR","KRW","PHP")
+
+nonndfs <- list(ccyData.Returns$MXN,ccyData.Returns$HUF,ccyData.Returns$PLN,ccyData.Returns$RUB,ccyData.Returns$TRY,ccyData.Returns$ZAR,ccyData.Returns$THB)
+names(nonndfs) <- c("MXN","HUF","PLN","RUB","TRY","ZAR","THB")
+
+plot(nonndfs[[1]],type="l",main="plot of all Non NDF EM currency returns")
+for(ccyRet in 1:length(nonndfs)){
+  lines(nonndfs[[ccyRet]],col=rainbow(length(nonndfs))[ccyRet])
+}
+legend("bottomleft", inset=.01, names(nonndfs),
+col = rainbow(length(nonndfs)),box.col="white",lty=1)
+```
+As can be seen, most of the non-ndf currencies are wavering between the -5\% and 5\% range. The zloty had a big jump in returns during 2014. This was because of a major announcement by the finance minister about the possibility of joining the EURO. 
+
+```{r echo=FALSE}
+plot(ndfs[[1]],type="l",main="plot of all NDF EM currency returns")
+for(ccyRet in 1:length(ndfs)){
+  lines(ndfs[[ccyRet]],col=rainbow(length(ndfs))[ccyRet])
+}
+legend("bottomleft", inset=.01, names(ndfs),
+col = rainbow(length(ndfs)),box.col="white",lty=1)
+```
+Most of the NDFs have been returning hovering just around the 0\% return mark. The Argentenian peso gave high returns in 2016 due to the political problems in the country, which brought the currency down a lot.
+
+##2 Directional Signal  
+Long the currencies which have gone up compared to the look back period and short the currencies which have gone down compared to the same period.  
+
+```{r echo=FALSE}
+#Directional Signal
+
+################################################################################
+#CALCULATE ANNUALIZED RETURN BY COMPARING IT TO LAGGED LOOKBACK PERIOD 
+CalculateLkBckAnnTrdRet <- function(lag,ccyData){
+  #Monthly returns
+  returns.Mnth <- lapply(ccyData,monthlyReturn)
+  
+  #Find the months when return was greater than lookback.Long it
+  LkBckRet.Long <- lapply(returns.Mnth,function(data){
+                              data[-1][data[-1]>lag(data,lag)[-1],]
+                        })
+
+  #Find the months when return was less than lookback.Short it
+  LkBckRet.Short <- lapply(returns.Mnth,function(data){
+                              -1.0 * data[-1][data[-1]<=lag(data,lag)[-1],]
+                        })
+  #Annualize
+  lapply(1:length(returns.Mnth),function(val){
+    LkBckRet <- rbind.xts(LkBckRet.Long[[val]],LkBckRet.Short[[val]])  
+    apply.yearly(1+LkBckRet,prod)-1
+    })  
+}
+###############################################################################
+
+
+####################################################################################
+#CALCULATE MEAN,SD AND SHARPE RATIO
+CalculateDirectionalResults <- function(returns,strategyFunc){
+  apply(matrix(1:12,ncol=1),1,function(monthlag){
+        LkBckRet.Ann <- strategyFunc(monthlag,returns)
+        meanVal <- mean(unlist(LkBckRet.Ann))
+        sdVal <- sd(unlist(LkBckRet.Ann))
+        res <- c(round(meanVal,2),round(sdVal,2),round(meanVal/sdVal,2))
+        names(res) <- c("Annualized Mean","SD","Sharpe Ratio")
+        res
+})
+}
+####################################################################################
+
+#Subset data
+ccyData.PreRec <- lapply(ccyData,function(data){data["2002/2006"]})
+ccyData.Rec <- lapply(ccyData,function(data){data["2007/2011"]})
+ccyData.PostRec <- lapply(ccyData,function(data){data["2011/2017"]})
+
+#calculate required stats for each subset
+directionalRes.preRec <-CalculateDirectionalResults(ccyData.PreRec,CalculateLkBckAnnTrdRet)
+kable(directionalRes.preRec,col.names = c(1:12),caption = "Direction Signal:2002-2007")
+
+directionalRes.Rec <- CalculateDirectionalResults(ccyData.Rec,CalculateLkBckAnnTrdRet)
+kable(directionalRes.Rec,col.names = c(1:12),caption = "Direction Signal:2007-2011")
+
+directionalRes.PostRec <- CalculateDirectionalResults(ccyData.PostRec,CalculateLkBckAnnTrdRet)
+kable(directionalRes.PostRec,col.names = c(1:12),caption = "Direction Signal:2011-Present")
+```
+  
+As can be seen, 2 - 5 month look back seems to be providing good sharpe ratio.
+
+##3 Consistency Filter
+We will consider a 3 month look back for the consistency filter.
+```{r echo=FALSE}
+#Consistency Filter
+#######################################################################################
+#CALCULATE ANNUALIZED RETURN BY COMPARING IT TO LAGGED LOOKBACK PERIOD AFTER CHECKING FOR CONSISTENCY
+CalcLkBckAnnTrdRet.WithFilter <- function(lag,ccyData){
+  returns.Dly <- lapply(ccyData,dailyReturn)
+  returns.Mnth <- lapply(ccyData,monthlyReturn)
+  
+  returns.consistentTrend <- lapply(names(returns.Mnth),function(dataName){
+                            data <- returns.Mnth[[dataName]]
+                            sapply(index(data[-1]),function(dateVal){
+                               endDate <- as.Date(dateVal)
+                               startDate <- endDate%m-%months(lag)
+                               dailyRet <- returns.Dly[[dataName]][paste0(startDate,"/",endDate),1]
+                               dailyRet.Pos <- sum(dailyRet>0)
+                               dailyRet.Neg <- sum(dailyRet<=0)
+                               dailyRet.Pos > dailyRet.Neg
+                            })      
+                        })
+  names(returns.consistentTrend) <- ccylist
+  
+  LkBckRet.Long <- lapply(names(returns.Mnth),function(dataName){
+                              data <- returns.Mnth[[dataName]]
+                              directional <- data[-1]>lag(data,lag)[-1]
+                              consistent <- returns.consistentTrend[[dataName]]
+                              data[-1][directional & consistent,]
+                        })
+
+  LkBckRet.Short <- lapply(names(returns.Mnth),function(dataName){
+                              data <- returns.Mnth[[dataName]]
+                              directional <- data[-1]<=lag(data,lag)[-1]
+                              consistent <- !returns.consistentTrend[[dataName]]
+                              -1.0 * data[-1][directional & consistent,]
+                        })
+  
+  lapply(1:length(returns.Mnth),function(val){
+    LkBckRet <- rbind.xts(LkBckRet.Long[[val]],LkBckRet.Short[[val]])  
+    apply.yearly(1+LkBckRet,prod)-1
+  }) 
+}
+###############################################################################################
+
+#calculate required stats for each subset
+condFilt.preRec <-CalculateDirectionalResults(ccyData.PreRec,CalcLkBckAnnTrdRet.WithFilter)
+kable(condFilt.preRec,col.names = c(1:12),caption = "Direction Signal With filter:2002-2007")
+
+condFilt.Rec <- CalculateDirectionalResults(ccyData.Rec,CalcLkBckAnnTrdRet.WithFilter)
+kable(condFilt.Rec,col.names = c(1:12),caption = "Direction Signal With filter:2007-2011")
+
+condFilt.PostRec <- CalculateDirectionalResults(ccyData.PostRec,CalcLkBckAnnTrdRet.WithFilter)
+kable(condFilt.PostRec,col.names = c(1:12),caption = "Direction Signal With filter:2011-Present")
+
+#plot
+plot(condFilt.preRec[3,][-1],pch=1,col="blue",ylab="Sharpe Ratio",xlab="Month lookback",main="Sharpe Ratio for various month lookbacks",ylim=c(-0.2,1.7))
+lines(condFilt.preRec[3,][-1],col="blue")
+points(directionalRes.preRec[3,][-1],pch=1,col="red")
+lines(directionalRes.preRec[3,][-1],col="red")
+legend("bottomright", inset=.01, c("Directional","Conditional"),
+col = c("red","blue"),box.col="white",lty=1)
+```
+
+
+
+#Carry trade
+Carry trade can be replicated using the Barclays GEMS index. This data can be retrieved out of Bloomberg. We can observe the correlation between the GEMS return and the SP500 return during non-recession and recession periods.
+
+```{r echo=FALSE}
+sp500 <- getSymbols("^GSPC",src = "yahoo",from=as.Date("2002-01-01"),auto.assign = FALSE)$'GSPC.Adjusted'
+sp500.ret <- monthlyReturn(sp500)
+
+sp500.ret.preRec <- sp500.ret["2002/2006"]
+sp500.ret.Rec <- sp500.ret["2007/2011"]
+sp500.ret.postRec <- sp500.ret["2011/2017"]
+
+carry.ccylist <- c("ARS","BRL","CLP","COP","MXN","HUF","PLN","RUB","TRY","ZAR","CZK","IDR","INR","KRW","PHP","TWD","CNY","MYR","SGD","HKD")
+
+data.raw <- read_excel_allsheets("ROW_Data.xlsx")
+data.gems <- xts(data.raw$GEMS$`Mid Price`,data.raw$GEMS$Date)
+gems.ret.mnth <- monthlyReturn(data.gems)
+
+gems.ret.preRec <- gems.ret.mnth["2002/2006"]
+gems.ret.Rec <- gems.ret.mnth["2007/2011"]
+gems.ret.postRec <- gems.ret.mnth["2011/2017"]
+
+plot(sp500.ret.preRec,main="Plot between SP500 and GEMS return (2002-2006)")
+lines(gems.ret.preRec,col="red")
+legend("bottomright", inset=.01, c("SP500","Barclays GEMS"),
+col = c("black","red"),box.col="white",lty=1)
+text(1061519150,-0.05096432,paste0("Correlation=",round(cor(sp500.ret.preRec,gems.ret.preRec),2)))
+text(1061519150,-0.07152945,paste0("MaxDrawDown=",round(maxDrawdown(gems.ret.preRec),2)))
+```
+We can observe a low correlation between the SP500 and the Barclays GEMS during non-recession period. This will assist in diversification of a traditional portfolio. 
+
+```{r echo=FALSE}
+plot(sp500.ret.Rec,main="Plot between SP500 and GEMS return (2007-2011)")
+lines(gems.ret.Rec,col="red")
+legend("bottomright", inset=.01, c("SP500","Barclays GEMS"),
+col = c("black","red"),box.col="white",lty=1)
+text(1184761117,-0.08756419,paste0("Correlation=",round(cor(sp500.ret.Rec,gems.ret.Rec),2)))
+text(1188761117,-0.120925,paste0("MaxDrawDown=",round(maxDrawdown(gems.ret.Rec),2)))
+```
+During recession environment, the correlation increases. This needs to be considered while investing in the carry trade, especially because of the very high maximum draw down value.  
+  
+The GEMS index is expected to have a risk aversion index embedded in it, to make sure that the risk of market stress is taken into consideration. We can double check this, by finding its correlation with the Financial Stress Index (FSI).  
+
+```{r echo=FALSE}
+fsi <- xts(data.raw$FSI$PX_MID,data.raw$FSI$Date)
+#Get weekly gems return as fsi is weekly
+gems.ret.wkly <- weeklyReturn(data.gems)
+plot(gems.ret.wkly,main="GEMS weekly return")
+plot(fsi,main="FSI weekly value")
+```
+As you can see, in 2008-2009, the FSI value goes up exponentially and the GEMS return falls in an equally drastic fashion. Such a trend can be noticed in other periods as well. This shows that the GEMS risk aversion component doesnt do a good job of predicting the possible recessions.  
+  
+  
+#Backwardation Indices
+```{r echo=FALSE}
+bar.backwrd <- xts(data.raw$Barcap_Backwardation$PX_MID,data.raw$Barcap_Backwardation$Date)
+bar.bckwd.ret <- monthlyReturn(bar.backwrd)
+cs.backwrd <- xts(data.raw$CS_Backwardation$PX_MID,data.raw$CS_Backwardation$Date)
+cs.backwrd.ret <- monthlyReturn(cs.backwrd)
+plot(bar.bckwd.ret,main="PLot of Barclays and CS backwardation index",ylab="return on index")
+lines(cs.backwrd.ret,col="red")
+
+cor(cs.backwrd.ret,bar.bckwd.ret)
+```

@@ -1,0 +1,62 @@
+---
+title: "weightsCal"
+author: "Zou Peijun"
+date: "February 23, 2017"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+load("IAQF_eco.RData")
+weights = as.data.frame(matrix(nrow = 6,ncol=6))
+percentage = c()
+library(dplyr)
+library(xts)
+period=list()
+for(i in 1:6){
+  period[[i]] = as.data.frame(matrix())
+}
+ts.data=merge(Real_GDP_Growth,PPI,join='left') %>%merge(Personal_Con_Exp,join='left')%>%merge(Non_Farm_Payroll,join='left')%>%merge(Indus_Production,join='left')%>%merge(Average_Hourly_Earnings,join='left')
+
+period[[1]]=ts.data["1983-03-31/1984-08-09",]
+period[[2]]=ts.data["1988-03-30/1989-05-17",]
+period[[3]] =ts.data["1994-02-04/1995-02-01",]
+period[[4]] =ts.data["1999-06-30/2000-05-16",]
+period[[5]] = ts.data["2004-06-30/2006-06-29",]
+period[[6]] = ts.data["2016-06-30/"]
+
+
+rescale = function(x){
+  return((x-mean(x))/sd(x))
+  
+}
+
+normalize = function(x){
+  
+  return(x/sqrt(crossprod(x)))
+}
+distance = function(x){
+  dis = 1-crossprod(x,tem[,6])
+  return(dis)
+}
+for(i in 1:6){
+  out=prcomp(t(period[[i]]))
+  out$rotation
+  percentage[i] = (out$sdev^2/sum(out$sdev^2))[1]
+  pc = as.data.frame(out$rotation)
+  weights[i,] = (abs(pc$PC1))%*%period[[i]]
+}
+
+```
+
+
+```{r}
+weights=apply(weights,2,rescale)
+tem=apply(weights[1:nrow(weights),],1,normalize)
+distbetween = apply(tem[,1:5],2,distance)
+result = (2-distbetween)/sum(2-distbetween)
+```
+

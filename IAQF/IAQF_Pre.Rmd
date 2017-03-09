@@ -1,0 +1,232 @@
+
+
+##Fed Fund Rates  
+```{r echo=FALSE}
+###### FUND RATES - FRED#############
+fundrate.daily <- read.csv("Fred_Effective.csv")
+fundrate.daily <- xts(fundrate.daily$DFF,as.Date(fundrate.daily$DATE))
+plot(fundrate.daily,main="Daily Fund Rates")
+```
+
+```{r echo=FALSE}
+fundrate.monthly <- read.csv("Fred_Effective_Month.csv")
+fundrate.monthly <- xts(fundrate.monthly$FEDFUNDS,as.Date(fundrate.monthly$DATE))
+plot(fundrate.monthly)
+```
+
+The daily and monthly rate sort of follows the same trend.  
+  
+##T-Bills   
+##1 Year  
+   
+*Normal Correlation*
+```{r echo = FALSE}
+######T-BILL 1 YEAR##########
+Tbill.1Y <- read.csv("DTB1YR.csv")
+Tbill.1Y[Tbill.1Y$DTB1YR == '.',"DTB1YR"] <- NA
+Tbill.1Y <- xts(Tbill.1Y$DTB1YR,as.Date(Tbill.1Y$DATE))
+Tbill.1Y <- na.approx(Tbill.1Y)
+storage.mode(Tbill.1Y) <- "numeric"
+Tbill.1Y.full <- na.omit(merge.xts(fundrate.daily,Tbill.1Y))
+
+#Rolling Correlation
+Tbill.1Y.Cor3M <- rollapply(Tbill.1Y.full,60,function(x) cor(x[,1],x[,2]),by.column = FALSE)
+Tbill.1Y.Cor1Y <- rollapply(Tbill.1Y.full,240,function(x) cor(x[,1],x[,2]),by.column = FALSE)
+Tbill.1Y.Cor2Y <- rollapply(Tbill.1Y.full,480,function(x) cor(x[,1],x[,2]),by.column = FALSE)
+
+
+#Normal Correlation
+cor(Tbill.1Y.full)
+```
+This high value is expected.  
+
+*Rolling Correlation Across Time*  
+```{r echo = FALSE}
+#plotting
+par(mfrow = c(2,2))
+plot(Tbill.1Y,main="Tbill over time")
+plot(Tbill.1Y.Cor3M,main="3M rolling correlation")
+plot(Tbill.1Y.Cor1Y,main="1Y rolling correlation")
+plot(Tbill.1Y.Cor2Y,main="3M rolling correlation")
+```
+
+We can see a steady high correlation between the two, except during the latest rate hike period(Correct?Why?)  
+
+*Rolling Correlation During July 1999 - July 2000*  
+```{r echo = FALSE}
+par(mfrow = c(2,2))
+#plot(Tbill.1Y.full['1994-01/1995-02'])
+#plot(Tbill.1Y.full['2004-06/2006-08'])
+plot(Tbill.1Y['1999-07/2000-07'],main="Tbill over time")
+plot(Tbill.1Y.Cor3M['1999-07/2000-07'],main="3M rolling correlation")
+plot(Tbill.1Y.Cor1Y['1999-07/2000-07'],main="1Y rolling correlation")
+```
+
+Correlation is reducing at the end of rate hike period (Correct?Why?)  
+  
+##3 Month TBill
+*Normal Correlation*    
+```{r echo = FALSE}
+######T-BILL 3 MONTH##########
+Tbill.3M <- read.csv("DTB3.csv")
+Tbill.3M[Tbill.3M$DTB3 == '.',"DTB3"] <- NA
+Tbill.3M <- xts(Tbill.3M$DTB3,as.Date(Tbill.3M$DATE))
+Tbill.3M <- na.approx(Tbill.3M)
+storage.mode(Tbill.3M) <- "numeric"
+Tbill.3M.full <- na.omit(merge.xts(fundrate.daily,Tbill.3M))
+
+#Roll Correlation - 3 month
+Tbill.3M.Cor3M <- rollapply(Tbill.3M.full,60,function(x) cor(x[,1],x[,2]),by.column = FALSE)
+Tbill.3M.Cor1Y <- rollapply(Tbill.3M.full,240,function(x) cor(x[,1],x[,2]),by.column = FALSE)
+Tbill.3M.Cor2Y <- rollapply(Tbill.3M.full,480,function(x) cor(x[,1],x[,2]),by.column = FALSE)
+
+#Normal Correlation
+cor(Tbill.3M.full)
+```
+This high value is expected.  
+
+*Rolling Correlation Across Time*  
+```{r echo = FALSE}
+#plotting
+par(mfrow = c(2,2))
+plot(Tbill.3M,main="Tbill over time")
+plot(Tbill.3M.Cor3M,main="3M rolling correlation")
+plot(Tbill.3M.Cor1Y,main="1Y rolling correlation")
+plot(Tbill.3M.Cor2Y,main="2Y rolling correlation")
+```
+
+Correct?Why?  
+
+
+##Govt 10 year  
+*Normal correlation*  
+```{r echo = FALSE}
+#######GOVT BONDS 10 YEAR######
+GovtBond.10Y <- read.csv("BOND10YR.csv")
+GovtBond.10Y <- xts(GovtBond.10Y$IRLTLT01USM156N,as.Date(GovtBond.10Y$DATE))
+GovtBond.10Y <- na.approx(GovtBond.10Y)
+storage.mode(GovtBond.10Y) <- "numeric"
+GovtBond.10Y.full <- na.omit(merge.xts(fundrate.monthly,GovtBond.10Y))
+
+#Roll Correlation - 3 month
+GovtBond.10Y.Cor3M <- rollapply(GovtBond.10Y.full,60,function(x) cor(x[,1],x[,2]),by.column = FALSE)
+GovtBond.10Y.Cor1Y <- rollapply(GovtBond.10Y.full,240,function(x) cor(x[,1],x[,2]),by.column = FALSE)
+GovtBond.10Y.Cor2Y <- rollapply(GovtBond.10Y.full,480,function(x) cor(x[,1],x[,2]),by.column = FALSE)
+
+#Normal Correlation
+cor(GovtBond.10Y.full)
+```
+Decently high, but not as high as the low maturity.  
+  
+*Rolling Correlation Across Time*  
+```{r echo = FALSE}
+#plotting
+par(mfrow = c(2,2))
+plot(GovtBond.10Y,main="Tbill over time")
+suppressWarnings(plot(GovtBond.10Y.Cor3M,main="3M rolling correlation"))
+suppressWarnings(plot(GovtBond.10Y.Cor1Y,main="1Y rolling correlation"))
+suppressWarnings(plot(GovtBond.10Y.Cor2Y,main="2Y rolling correlation"))
+```
+
+A bit high, but more random.    
+
+*Rolling Correlation During July 1999 - July 2000*  
+```{r echo = FALSE}
+par(mfrow = c(2,2))
+#plot(Tbill.1Y.full['1994-01/1995-02'])
+#plot(Tbill.1Y.full['2004-06/2006-08'])
+suppressWarnings(plot(GovtBond.10Y.full['1999-07/2000-07'],main="Tbill over time"))
+suppressWarnings(plot(GovtBond.10Y.Cor3M['1999-07/2000-07'],main="3M rolling correlation"))
+suppressWarnings(plot(GovtBond.10Y.Cor1Y['1999-07/2000-07'],main="1Y rolling correlation")) 
+```
+Reducing At the end of the rate hike.    
+ 
+##Barclays Aggregate Index
+*Normal Correlation*  
+```{r echo=FALSE}
+########Barclays Aggreggate#######
+BarcTotalAggr <- xts(data$`Barclays US Total Aggregate`[,c(2,3)],data$`Barclays US Total Aggregate`$Date)
+BarcTotalAggr.full <- na.omit(merge.xts(fundrate.daily,BarcTotalAggr))
+
+#Roll Correlation - 3 month
+BarcTotalAggr.Price.Cor3M <- rollapply(BarcTotalAggr.full,60,function(x) cor(x[,1],x[,2]),by.column = FALSE)
+BarcTotalAggr.Price.Cor1Y <- rollapply(BarcTotalAggr.full,240,function(x) cor(x[,1],x[,2]),by.column = FALSE)
+BarcTotalAggr.Price.Cor2Y <- rollapply(BarcTotalAggr.full,480,function(x) cor(x[,1],x[,2]),by.column = FALSE)
+
+BarcTotalAggr.YTM.Cor3M <- rollapply(BarcTotalAggr.full,60,function(x) cor(x[,1],x[,3]),by.column = FALSE)
+
+#Normal Correlation
+cor(BarcTotalAggr.full)
+```
+  
+High correlation with YTW and high negative correlation as price.  
+
+*Rolling Correlation Across Time*  
+```{r echo = FALSE}
+#plotting
+par(mfrow = c(2,2))
+suppressWarnings(plot(BarcTotalAggr,main="Aggregate over time"))
+suppressWarnings(plot(BarcTotalAggr.Price.Cor3M,main="3M rolling correlation"))
+suppressWarnings(plot(BarcTotalAggr.Price.Cor1Y,main="1Y rolling correlation"))
+suppressWarnings(plot(BarcTotalAggr.Price.Cor2Y,main="2Y rolling correlation"))
+```
+  
+Negative, but few positives(Correct?Why?)     
+
+*Rolling Correlation During July 1999 - July 2000*  
+```{r echo = FALSE}
+par(mfrow = c(2,2))
+#plot(Tbill.1Y.full['1994-01/1995-02'])
+#plot(Tbill.1Y.full['2004-06/2006-08'])
+suppressWarnings(plot(BarcTotalAggr['1999-07/2000-07'],main="Aggregate over time"))
+suppressWarnings(plot(BarcTotalAggr.Price.Cor3M['1999-07/2000-07'],main="3M rolling correlation"))
+suppressWarnings(plot(BarcTotalAggr.Price.Cor1Y['1999-07/2000-07'],main="1Y rolling correlation"))
+```
+Becoming positive correlation at the end of the rate peak period (Why?Correct?)  
+  
+##5 Year Govt Inflation bonds  
+*Normal Correlation*  
+```{r echo=FALSE}
+GovtInf.5Y <- xts(data$GovtII5[,2],as.Date(data$GovtII5$Date))
+GovtInf.5Y <- GovtInf.5Y[!is.na(index(GovtInf.5Y)),]
+GovtInf.5Y.full <- na.omit(merge.xts(fundrate.daily,GovtInf.5Y))
+
+#Roll Correlation - 3 month
+GovtInf.5Y.Cor3M <- rollapply(GovtInf.5Y.full,60,function(x) cor(x[,1],x[,2]),by.column = FALSE)
+GovtInf.5Y.Cor1Y <- rollapply(GovtInf.5Y.full,240,function(x) cor(x[,1],x[,2]),by.column = FALSE)
+GovtInf.5Y.Cor2Y <- rollapply(GovtInf.5Y.full,480,function(x) cor(x[,1],x[,2]),by.column = FALSE)
+
+#Normal Correlation
+cor(GovtInf.5Y.full)
+```
+Correlation is high.    
+
+*Rolling Correlation Across Time*  
+```{r echo = FALSE}
+#plotting
+par(mfrow = c(2,2))
+plot(GovtInf.5Y,main="Govt Inflation Bond over time")
+plot(GovtInf.5Y.Cor3M,main="3M rolling correlation")
+plot(GovtInf.5Y.Cor1Y,main="1Y rolling correlation")
+plot(GovtInf.5Y.Cor2Y,main="2Y rolling correlation")
+```
+
+Quite a few negatives surprisingly (Why?Correct?)  
+
+*Rolling Correlation During July 1999 - July 2000*    
+```{r echo = FALSE}
+par(mfrow = c(2,2))
+#plot(Tbill.1Y.full['1994-01/1995-02'])
+#plot(Tbill.1Y.full['2004-06/2006-08'])
+plot(GovtInf.5Y['1999-07/2000-07'],main="Aggregate over time")
+plot(GovtInf.5Y.Cor3M['1999-07/2000-07'],main="3M rolling correlation")
+plot(GovtInf.5Y.Cor1Y['1999-07/2000-07'],main="1Y rolling correlation")
+```
+More random than expected.  
+ 
+ 
+ 
+```{r}
+BarcTotalAggr <- xts(data$`Barclays US Total Aggregate`[,c(2,3)],data$`Barclays US Total Aggregate`$Date)
+s
+```

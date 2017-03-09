@@ -1,0 +1,128 @@
+---
+title: "IAQF Trading Strategies"
+output: pdf_document
+---
+
+```{r echo=FALSE}
+setwd("C:/_UCLA/IAQF")
+
+########BLOOMBERG DATA#############
+library(readxl)
+suppressMessages(library(xts))
+read_excel_allsheets <- function(filename) {
+  sheets <- readxl::excel_sheets(filename)
+  x <-    lapply(sheets, function(X) readxl::read_excel(filename, sheet = X,skip = 1))
+  names(x) <- sheets
+  x
+}
+suppressWarnings(data <- read_excel_allsheets("Data_FixedIncome_IAQF.xlsx"))
+
+
+#10 year yield data
+suppressWarnings(dataNew <- read_excel_allsheets("10YearBondYield.xlsx"))
+govt.10year <- xts(dataNew$Sheet2$PX_LAST,order.by = as.Date(dataNew$Sheet2$Date))
+
+# 1 year yield data
+Tbill.1Y <- read.csv("DGS1.csv")
+Tbill.1Y[Tbill.1Y$DTB1YR == '.',"DGS1"] <- NA
+Tbill.1Y <- xts(Tbill.1Y$DGS1,as.Date(Tbill.1Y$DATE))
+Tbill.1Y <- na.approx(Tbill.1Y)
+storage.mode(Tbill.1Y) <- "numeric"
+
+#20 year yield data
+govt.20Y <- read.csv("DGS20.csv")
+govt.20Y[govt.20Y$DGS20 == '.',"DGS20"] <- NA
+govt.20Y <- xts(govt.20Y$DGS20,as.Date(govt.20Y$DATE))
+govt.20Y <- na.approx(govt.20Y)
+storage.mode(govt.20Y) <- "numeric"
+```
+
+#Strategy 1 - Long 10 Year Government Bonds and short 1 year bonds  
+
+##Levels  
+For levels, we take the two and find the difference in their returns  
+```{r echo=FALSE}
+#Yield diff for govt 10 year government bonds
+govt.10Year.diff <- diff(govt.10year)[-1,]
+
+#Price diff for govt 1 year T bills
+Tbill.1Y.diff <- diff(Tbill.1Y)[-1] 
+
+Govt.10Yr1Yr <- na.omit(merge.xts(govt.10Year.diff,Tbill.1Y.diff))
+Govt.10Yr1Yr.Levels <- Govt.10Yr1Yr[,1] - Govt.10Yr1Yr[,2]
+colnames(Govt.10Yr1Yr.Levels) <- c("10Yr1YrReturns")
+write.csv(as.matrix(Govt.10Yr1Yr.Levels),"Strategy1_1Y10Y.csv")
+
+#plot(Govt.10Yr1Yr.Levels,main="Overall Levels of 10 Yr return - 1 yr return")
+plot(Govt.10Yr1Yr.Levels['2004-06/2006-08'],main="2004-2006 Hike Levels of 10 Yr return - 1 yr return")
+#plot(Govt.10Yr1Yr.Levels['2007-03/2009-07'],main="Financial Crisis Levels of 10 Yr return - 1 yr return")
+#plot(Govt.10Yr1Yr.Levels['2015-01/2017-02'],main="Latest Levels of 10 Yr return - 1 yr return")
+```
+In standalone, the difference in returns between 10 year and 1 year varies between -0.1 and 0.1
+
+
+##Rolling Correlation
+```{r echo=FALSE}
+#Rolling Correlation with daily yield diffs (returns)
+GovtD.10Yr1Yr.Cor3M<- rollapply(Govt.10Yr1Yr,60,function(x) cor(x[,1],x[,2]),by.column = FALSE)
+plot(GovtD.10Yr1Yr.Cor3M['2004-06/2006-08'],main="3 month Rolling correlation between 10 yr and 1 year daily return")
+
+#Rolling correlation with weekly yield diffs(returns)
+GovtW.10Yr1Yr <- apply.weekly(1+Govt.10Yr1Yr/100,function(x) apply(x,2,prod))-1
+GovtW.10Yr1Yr.Cor3M<- rollapply(GovtW.10Yr1Yr,12,function(x) cor(x[,1],x[,2]),by.column = FALSE)
+plot(GovtW.10Yr1Yr.Cor3M['2004-06/2006-08'],main="3 month Rolling correlation between 10 yr and 1 year weekly return")
+```
+
+The 3 Month rolling correlation (daily and weekly returns) are consistently positive over the rate hike period
+
+#Strategy 2 - Long 1 year returns, 2 Short 10 year returns, 1 long 20 year returns  
+
+##Levels  
+For levels, we find the net value of returns on a daily basis  
+```{r echo=FALSE}
+#Yield diff for govt 20 year government bonds
+govt.20Y.diff <- diff(govt.20Y)[-1,]
+
+Govt.20Yr10Yr1Yr <- na.omit(merge.xts(govt.20Y.diff,govt.10Year.diff,Tbill.1Y.diff))
+Govt.20Yr10Yr1Yr.Levels <- Govt.20Yr10Yr1Yr[,1] - 2*Govt.20Yr10Yr1Yr[,2] + Govt.20Yr10Yr1Yr[,3] 
+colnames(Govt.20Yr10Yr1Yr.Levels) <- c("20Yr10Yr1YrReturns")
+write.csv(as.matrix(Govt.20Yr10Yr1Yr.Levels),"Strategy2_1Y10Y20Y.csv")
+
+#plot(Govt.20Yr10Yr1Yr.Levels,main="Overall 20Y - 2*10Y + 1Y")
+plot(Govt.20Yr10Yr1Yr['2004-06/2006-08'],main="2004-2006 -> 20Y -2 * 10Y + 1Y")
+#plot(Govt.20Yr10Yr1Yr.Levels['2007-03/2009-07'],main="Financial Crisis -> 20Y -2 * 10Y + 1Y")
+#plot(Govt.20Yr10Yr1Yr.Levels['2015-01/2017-02'],main="Latest Levels -> 20Y -2 * 10Y + 1Y")
+```
+In standalone, the difference in return of '20Y -2 * 10Y + 1Y' strategy varies between -0.1 and 0.1
+
+
+#Strategy 3 - AAA Bonds - BBB Bonds levels  
+##Levels  
+```{r echo=FALSE}
+#AAA Bond yields
+AAA.10yr <- read.csv("AAABondYield.csv")
+AAA.10yr[AAA.10yr$BAMLC0A1CAAAEY == '.',"BAMLC0A1CAAAEY"] <- NA
+AAA.10yr <- xts(AAA.10yr$BAMLC0A1CAAAEY,as.Date(AAA.10yr$DATE))
+AAA.10yr <- na.approx(AAA.10yr)
+storage.mode(AAA.10yr) <- "numeric"
+AAA.10yr.diff <- diff(AAA.10yr)[-1]
+
+#BBB Bond yields
+BBB.10yr <- read.csv("BBBBondYield.csv")
+BBB.10yr[BBB.10yr$BAMLC0A4CBBBEY == '.',"BAMLC0A4CBBBEY"] <- NA
+BBB.10yr <- xts(BBB.10yr$BAMLC0A4CBBBEY,as.Date(BBB.10yr$DATE))
+BBB.10yr <- na.approx(BBB.10yr)
+storage.mode(BBB.10yr) <- "numeric"
+BBB.10yr.diff <- diff(BBB.10yr)[-1]
+
+AAA.BBB <- na.omit(merge.xts(AAA.10yr.diff,BBB.10yr.diff))
+AAA.BBB.Levels <- AAA.BBB[,1] - AAA.BBB[,2] 
+colnames(AAA.BBB.Levels) <- "AAABBBReturns"
+write.csv(as.matrix(AAA.BBB.Levels),"Strategy3_AAABBB.csv")
+
+
+#plot(AAA.BBB.Levels)
+plot(AAA.BBB.Levels['2004-06/2006-08'],main="2004-2006 Hike Levels of AAA return - BBB return")
+```
+The Levels of returns are very low during the rate hike period. 
+

@@ -1,0 +1,447 @@
+---
+title: "IAQF"
+author: "Fixed Income"
+output: word_document
+---
+
+```{r echo=FALSE}
+########################################
+########################################
+###STEPS:Press ALT+0 TO COLLAPSE. THEN NAVIGATE TO NECESSARY SECTION
+########################################
+########################################
+```
+##DATA RETRIEVAL
+```{r echo=FALSE}
+setwd("C:/_UCLA/Personal/IAQF")
+#libraries
+library(readxl)
+suppressMessages(library(xts))
+suppressMessages(library(dplyr))
+suppressMessages(library(quantmod))
+suppressMessages(library(xtable))
+suppressMessages(library(lubridate))
+
+##GET BLOOMBERG AND FRED DATA
+read_excel_allsheets <- function(filename) {
+  sheets <- readxl::excel_sheets(filename)
+  x <-    lapply(sheets, function(X) readxl::read_excel(filename, sheet = X,skip = 1))
+  names(x) <- sheets
+  x
+}
+suppressWarnings(data <- read_excel_allsheets("Data_FixedIncome_IAQF.xlsx"))
+suppressWarnings(dataNew <- read_excel_allsheets("IAQF_Data.xlsx"))
+
+suppressWarnings(dataNew <- read_excel_allsheets("10YearBondYield.xlsx"))
+govt.10year <- xts(dataNew$Sheet2$PX_LAST,order.by = as.Date(dataNew$Sheet2$Date))
+govt.10Year.daily <- diff(govt.10year)/100
+colnames(govt.10Year.daily) <- "10YrGovtRet"
+govt.10Year.Weekly <- apply.weekly(1+govt.10Year.daily,prod)-1
+colnames(govt.10Year.Weekly) <- "10YrGovtRet"
+```
+
+
+```{r echo=FALSE}
+#All hike periods
+hikePeriods <- matrix(c("1983-03-31","1984-08-09","1988-03-30","1989-05-17","1994-02-04","1995-02-01","1999-06-30","2000-05-16","2004-06-30","2006-06-29","2006-06-29","2009-06-30","2009-07-01","2017-02-01"),ncol=2,byrow = TRUE)
+hikePeriodNames <- c("83_84","88_89","94_95","99_00","04_06")
+AllPeriods <- c(hikePeriodNames,"Recession","Now")
+
+#calculate return of data provided
+hikePeriodData <- function(data.returns,basedata){
+  data.full <- na.omit(merge.xts(basedata,data.returns))
+
+  data.HikePeriods <- lapply(1:nrow(hikePeriods),function(x){
+    period <- paste0(hikePeriods[x,1],"/",hikePeriods[x,2])
+    data.full[period]
+  })
+  
+  names(data.HikePeriods) <- AllPeriods
+  return(data.HikePeriods)
+}
+
+#Get the necessary stats
+Necessarystats <- function(data,freq="Y"){
+    lapply(data,function(x){
+        if(nrow(x) > 0){
+          means <- apply(x,2,mean)
+          sds <- apply(x,2,sd)
+          noOfYrs <- as.numeric(difftime(max(index(x)),min(index(x)),units = "weeks")/52.25)
+          annualizedReturnsAvg <- sapply(1+x,function(y){mean(apply.yearly(y,prod))})-1
+          
+          multipler = 1
+          if(freq=="D"){
+            multiplier = sqrt(250)
+          }
+          else if(freq=="W"){
+            multiplier = sqrt(52)
+          }
+          else if(freq=="M"){
+            multipler = sqrt(12)
+          }
+          
+          annualizedSd <- sds*multiplier
+          sharpeRatio <- annualizedReturnsAvg/annualizedSd
+          rbind(means,sds,annualizedReturnsAvg,annualizedSd,sharpeRatio)
+        }
+    })
+}
+
+#Get Weekly data
+weeklyData <- function(data){
+  lapply(data,function(x){
+    if(nrow(x)>0){
+      y1 <- apply.weekly(1+x[,1],prod)-1
+      y2 <- apply.weekly(1+x[,2],prod)-1
+      cbind(y1,y2)
+    }
+  })
+}
+
+#Calculating rolling correlation
+rollingCorrelations <- function(data,RequiredFreq='D'){
+  Rollfreq <- 1
+  if(RequiredFreq=='D'){
+    Rollfreq  <- 60
+  }
+  else if(RequiredFreq=='W'){
+    Rollfreq <- 12
+  }
+  else if(RequiredFreq=='M'){
+    Rollfreq <-  3
+  }
+  lapply(data,function(x){
+      rollapply(x,Rollfreq,function(x) cor(x[,1],x[,2]),by.column = FALSE)
+    })
+}
+
+```
+
+##BARCLAYS AGGREGATE 
+
+```{r echo=FALSE}
+#Get Data
+BarcTotalAggr <- xts(data$`Barclays US Total Aggregate`[,c(2,3)],data$`Barclays US Total Aggregate`$Date)
+
+#Get data returns in hike periods
+BarcTotalAggr.Daily <- diff(BarcTotalAggr[,2])/100
+colnames(BarcTotalAggr.Daily) <- "BarcAggr"
+BarcTotalAggr.HikePeriods.Daily <- hikePeriodData(BarcTotalAggr.Daily,govt.10Year.daily)
+#Get mean, variance, annualized returns
+BarcTotalAggr.Stats <- Necessarystats(BarcTotalAggr.HikePeriods.Daily,"D")
+BarcTotalAggr.Stats
+
+#Get complete correlations during this period
+BarcTotalAggr.Corr <- lapply(BarcTotalAggr.HikePeriods.Daily,cor)
+BarcTotalAggr.Corr
+
+#Weekly 3 month rolling correlation
+BarcTotalAggr.Weekly <- apply.weekly(1+BarcTotalAggr.Daily,prod)-1
+BarcTotalAggr.HikePeriods.Weekly <- hikePeriodData(BarcTotalAggr.Weekly,govt.10Year.Weekly)
+BarcTotalAggr.RollCorr <- rollingCorrelations(BarcTotalAggr.HikePeriods.Weekly[-1],'W')
+
+plot(do.call(rbind,BarcTotalAggr.RollCorr[c("04_06","Recession","Now")]),main="Rolling Correlation Barclays Aggregate")
+abline(v = as.POSIXct.Date(as.Date(hikePeriods[5,2])), col = 'blue', lty = 3, lwd = 2)
+abline(v = as.POSIXct.Date(as.Date(hikePeriods[6,2])), col = 'blue', lty = 3, lwd = 2)
+text(x=1120724623,y=0.5316487,"Rate Hike",col = "Red")
+text(x=1190809736,y=0.4698893,"Recession",col = "Red")
+text(x=1325382051,y=0.5402662,"Now",col = "Red")
+```
+
+
+##GOVT INFLATION INDEXED 10 year
+```{r echo=FALSE}
+GovtII10 <- xts(data$GovtII10$PX_MID,data$GovtII10$Date)
+
+#Get data returns in hike periods
+GovtII10.Daily <- diff(GovtII10)/100
+colnames(GovtII10.Daily) <- "GovtII10"
+GovtII10.HikePeriods.Daily <- hikePeriodData(GovtII10.Daily,govt.10Year.daily)
+
+#Get mean, variance, annualized returns
+GovtII10.Stats <- Necessarystats(GovtII10.HikePeriods.Daily,"D")
+GovtII10.Stats
+
+#Get complete correlations during this period
+GovtII10.Corr <- lapply(GovtII10.HikePeriods.Daily,cor)
+GovtII10.Corr
+
+GovtII10.HikePeriods.Weekly <- weeklyData(GovtII10.HikePeriods.Daily)
+GovtII10.RollCorr <- rollingCorrelations(Filter(Negate(is.null), GovtII10.HikePeriods.Weekly),"W")
+
+plot(do.call(rbind,GovtII10.RollCorr[c("04_06","Recession","Now")]),main="Rolling Correlation Govt10 Inflation Indexed bonds")
+abline(v = as.POSIXct.Date(as.Date(hikePeriods[5,2])), col = 'blue', lty = 3, lwd = 2)
+abline(v = as.POSIXct.Date(as.Date(hikePeriods[6,2])), col = 'blue', lty = 3, lwd = 2)
+text(x=1120724623,y=0.002514136,"Rate Hike",col = "Red")
+text(x=1210809736,y=0.1224832,"Recession",col = "Red")
+text(x=1325382051,y=0.005892442,"Now",col = "Red")
+```
+
+
+##GOVT INFLATION INDEXED 5 year
+```{r echo=FALSE}
+GovtII5 <- xts(data$GovtII5$PX_MID,data$GovtII5$Date)
+GovtII5.Daily <- diff(GovtII5)/100
+colnames(GovtII5.Daily) <- "GovtII5"
+
+#Get data returns in hike periods
+GovtII5.HikePeriods.daily <- hikePeriodData(na.omit(GovtII5.Daily),govt.10Year.daily)
+
+#Get mean, variance, annualized returns
+GovtII5.Stats <- Necessarystats(GovtII5.HikePeriods.daily,freq="D")
+GovtII5.Stats
+
+#Get complete correlations during this period
+GovtII5.Corr <- lapply(GovtII5.HikePeriods.daily,cor)
+GovtII5.Corr
+
+GovtII5.HikePeriods.Weekly <- weeklyData(GovtII5.HikePeriods.daily)
+GovtII5.RollCorr <- rollingCorrelations(Filter(Negate(is.null), GovtII5.HikePeriods.Weekly),"W")
+
+plot(do.call(rbind,GovtII5.RollCorr[c("04_06","Recession","Now")]),main="Rolling Correlation Govt 5year Inflation Indexed bonds")
+abline(v = as.POSIXct.Date(as.Date(hikePeriods[5,2])), col = 'blue', lty = 3, lwd = 2)
+abline(v = as.POSIXct.Date(as.Date(hikePeriods[6,2])), col = 'blue', lty = 3, lwd = 2)
+```
+
+##Govt 30 YEAR
+```{r echo=FALSE}
+Govt30 <- xts(data$Govt30$PX_MID,data$Govt30$Date)
+#Get data returns in hike periods
+Govt30.Daily <- diff(Govt30)/100
+Govt30.HikePeriods.Daily <- hikePeriodData(na.omit(Govt30.Daily),govt.10Year.daily)
+
+#Get mean, variance, annualized returns
+Govt30.Stats <- Necessarystats(Govt30.HikePeriods.Daily,"D")
+Govt30.Stats
+
+#Get complete correlations during this period
+Govt30.Corr <- lapply(Govt30.HikePeriods.Daily,cor)
+Govt30.Corr
+
+Govt30.HikePeriods.Weekly <- weeklyData(Govt30.HikePeriods.Daily)
+Govt30.RollCorr <- rollingCorrelations(Filter(Negate(is.null), Govt30.HikePeriods.Weekly),"W")
+
+plot(do.call(rbind,Govt30.RollCorr[c("04_06","Recession","Now")]),main="Rolling Correlation Govt 30 bonds")
+abline(v = as.POSIXct.Date(as.Date(hikePeriods[5,2])), col = 'blue', lty = 3, lwd = 2)
+abline(v = as.POSIXct.Date(as.Date(hikePeriods[6,2])), col = 'blue', lty = 3, lwd = 2)
+
+```
+
+
+##1Y-10Y yield curve check vs 1Y-10Y-20Y vol check vs Credit check
+```{r echo=FALSE}
+suppressWarnings(sp500data <- read_excel_allsheets("SP500_Price.xlsx"))
+sp500 <- xts(sp500data$Sheet1$PX_LAST,order.by = as.Date(sp500data$Sheet1$Date))
+sp500.daily <- dailyReturn(sp500)
+colnames(sp500.daily) <- "SP500"
+Strategy1_1Y10Y <- read.csv("Strategy1_1Y10Y.csv",stringsAsFactors = FALSE)
+Strat1_1Y10Y <- xts(Strategy1_1Y10Y[,2]/100,as.Date(Strategy1_1Y10Y[,1]))
+colnames(Strat1_1Y10Y) <- "1Y10Y"
+
+Strat1_1Y10Y.HikePeriods.Daily <- hikePeriodData(sp500.daily,Strat1_1Y10Y)
+
+Strat1_1Y10Y.Stats <- Necessarystats(Strat1_1Y10Y.HikePeriods.Daily,"D")
+Strat1_1Y10Y.Stats
+
+#Get complete correlations during this period
+Strat1_1Y10Y.Corr <- lapply(Strat1_1Y10Y.HikePeriods.Daily,cor)
+
+Strat1_1Y10Y.HikePeriods.Weekly <- weeklyData(Strat1_1Y10Y.HikePeriods.Daily)
+Strat1_1Y10Y.RollCorr <- rollingCorrelations(Filter(Negate(is.null), Strat1_1Y10Y.HikePeriods.Weekly),"W")
+
+```
+
+
+```{r echo=FALSE}
+Strategy2_Vol <- read.csv("Strategy2_1Y10Y20Y.csv",stringsAsFactors = FALSE)
+Strat2_Vol <- xts(Strategy2_Vol[,2]/100,as.Date(Strategy2_Vol[,1]))
+colnames(Strat2_Vol) <- "VolCheck"
+
+Strat2.HikePeriods.Daily <- hikePeriodData(Strat2_Vol,govt.10Year.daily)
+
+Strat2.Stats <- Necessarystats(Strat2.HikePeriods.Daily,"D")
+Strat2.Stats
+
+#Get complete correlations during this period
+Strat2.Corr <- lapply(Strat2.HikePeriods.Daily,cor)
+
+Strat2.HikePeriods.Weekly <- weeklyData(Strat2.HikePeriods.Daily)
+Strat2.RollCorr <- rollingCorrelations(Filter(Negate(is.null), Strat2.HikePeriods.Weekly),"W")
+```
+
+```{r echo=FALSE}
+Strategy3_Credit <- read.csv("Strategy3_AAABBB.csv",stringsAsFactors = FALSE)
+Strat3_Credit <- xts(Strategy3_Credit[,2]/100,as.Date(Strategy3_Credit[,1]))
+colnames(Strat3_Credit) <- "CreditCheck"
+
+Strat3.HikePeriod.Daily <- hikePeriodData(Strat3_Credit,govt.10Year.daily)
+
+Strat3.Stats <- Necessarystats(Strat3.HikePeriod.Daily,"D")
+Strat3.Stats
+
+#Get complete correlations during this period
+Strat3.Corr <- lapply(Strat3.HikePeriod.Daily,cor)
+
+Strat3.HikePeriod.Weekly <- weeklyData(Strat3.HikePeriod.Daily)
+Strat3.RollCorr <- rollingCorrelations(Filter(Negate(is.null), Strat3.HikePeriod.Weekly),"W")
+```
+
+```{r echo=FALSE}
+plot(do.call(rbind,Strat2.RollCorr[c("04_06","Recession","Now")]),main="Volatility strategy vs Govt 10 year")
+abline(v = as.POSIXct.Date(as.Date(hikePeriods[5,2])), col = 'blue', lty = 3, lwd = 2)
+abline(v = as.POSIXct.Date(as.Date(hikePeriods[6,2])), col = 'blue', lty = 3, lwd = 2)
+legend("topright",lty=c(1), col=c("black"),c("20Y L, 2*10Y S,1Y L"))
+```
+
+
+##COVARIANCE MATRIX BASED ON WEIGHTS
+```{r echo=FALSE}
+#Get Risk free rate
+factordata <- read.csv("F-F_Research_Data_Factors_daily.csv",skip = 4,header = T,stringsAsFactors = F)
+rf <- xts(factordata$RF,ymd(factordata$X))
+
+#Fixed Income
+##Barclays Aggregate
+BarcTotalAggr <- xts(data$`Barclays US Total Aggregate`[,c(2,3)],data$`Barclays US Total Aggregate`$Date)
+BarcTotalAggr.Daily <- diff(BarcTotalAggr[,2])/100
+colnames(BarcTotalAggr.Daily) <- "BarcAggr"
+BarcTotalAggr.HikePeriods.Daily <- hikePeriodData(BarcTotalAggr.Daily,govt.10Year.daily)[hikePeriodNames]
+
+#Equity
+dataEquity <- read.csv("equity_sector_return.csv")
+equity.sectors <- xts(dataEquity[-1]/100,ymd(dataEquity$Date)) 
+energy.data <- equity.sectors$Enrgy
+telecom.data <- equity.sectors$Telcm
+health.data <- equity.sectors$Hlth
+
+energy.HikePeriod <- hikePeriodData(equity.sectors$Enrgy,govt.10Year.daily)[hikePeriodNames]
+telecom.HikePeriod <- hikePeriodData(equity.sectors$Telcm,govt.10Year.daily)[hikePeriodNames]
+health.HikePeriod <- hikePeriodData(equity.sectors$Hlth,govt.10Year.daily)[hikePeriodNames]
+
+#Commodities
+dataGold <- read.csv("GOLD_FUTURE.csv")
+gold <- xts(dataGold[-1],as.Date(dataGold$Date,"%m/%d/%Y"))
+colnames(gold) <- c("Gold")
+gold <- (gold - lag(gold))/lag(gold)[-1]
+gold.HikePeriod <- hikePeriodData(gold,govt.10Year.daily)[hikePeriodNames]
+
+dataOil <- read.csv("OIL_FUTURE.csv")
+oil <- xts(dataOil[-1],as.Date(dataOil$Date,"%m/%d/%Y"))
+colnames(oil) <- c("Oil")
+oil <- (oil - lag(oil))/lag(oil)[-1]
+oil.HikePeriod <- hikePeriodData(oil,govt.10Year.daily)[hikePeriodNames]
+
+#FX
+zar.data <- read.csv("ZAR.csv") 
+zar <- xts(zar.data$daily.returns,as.Date(zar.data$Index,"%m/%d/%y"))
+colnames(zar) <- "ZAR"
+zar.HikePeriod <- hikePeriodData(zar,govt.10Year.daily)[hikePeriodNames]
+
+#Calculate
+weights <- c(0.1069516,0.2349563,0.3274565,0.1324940,0.1981415)
+names(weights) <- hikePeriodNames
+
+#Small cleanup. Barclays Aggregate has only monthly data for 1983-84. So change others
+energy.HikePeriod$`83_84` <- apply.monthly(1+energy.HikePeriod$`83_84`,prod)-1
+colnames(energy.HikePeriod$`83_84`) <- "Enrgy"
+telecom.HikePeriod$`83_84` <- apply.monthly(1+telecom.HikePeriod$`83_84`,prod)-1
+colnames(telecom.HikePeriod$`83_84`) <- "Telcm"
+health.HikePeriod$`83_84` <- apply.monthly(1+health.HikePeriod$`83_84`,prod)-1
+colnames(health.HikePeriod$`83_84`) <- "Hlth"
+oil.HikePeriod$`83_84` <- apply.monthly(1+oil.HikePeriod$`83_84`,prod)-1
+colnames(oil.HikePeriod$`83_84`) <- "Oil"
+gold.HikePeriod$`83_84` <- apply.monthly(1+gold.HikePeriod$`83_84`,prod)-1
+colnames(gold.HikePeriod$`83_84`) <- "Gold"
+zar.HikePeriod$`83_84` <- apply.monthly(1+zar.HikePeriod$`83_84`,prod)-1
+colnames(zar.HikePeriod$`83_84`) <- "ZAR"
+
+
+##################
+#CALCULATECOVCORMATRIX - calculates the covariance matrix of various assets involved
+#given weights corresponding to each hike period
+#param(weightsPeriods) - Weights for each previous rate hikes.
+##################
+
+CalculateCovCorMatrix <- function(weightsPeriods){
+  names(weightsPeriods) <- hikePeriodNames
+  
+  #Get merged data of all assets for all periods
+  mergedData <- lapply(names(weightsPeriods),function(period){
+      periodMerged <- merge.xts(
+                                #BarcTotalAggr.HikePeriods.Daily[[period]]$BarcAggr,
+                                energy.HikePeriod[[period]]$Enrgy,
+                                telecom.HikePeriod[[period]]$Telcm,
+                                health.HikePeriod[[period]]$Hlth,
+                                oil.HikePeriod[[period]]$Oil,
+                                gold.HikePeriod[[period]]$Gold
+                                #,
+                                #zar.HikePeriod[[period]]$ZAR
+                                )
+      na.omit(periodMerged)
+    })
+  names(mergedData) <- hikePeriodNames
+  
+  #Weight all returns based on corresponding weight for that period
+  mergedData.weighted <- lapply(names(weightsPeriods),function(period){
+      weightsPeriods[period]*mergedData[[period]]
+    })    
+  
+  
+  #connect all the data, and calculate necessary info
+  allData <- do.call(rbind,mergedData.weighted)
+  results <- list()
+  results$MergedData <- allData
+  results$Covariance <- cov(allData)
+  results$Correlation <- cor(allData)  
+  return(results)
+}
+
+```
+
+```{r echo=FALSE}
+library(knitr)
+CovResults <- CalculateCovCorMatrix(weights)
+kable(CovResults$Covariance*250)
+```
+
+##BUILDING PORTFOLIO using MVE
+```{r echo=FALSE}
+ExcessReturns.temp <- merge.xts(CovResults$MergedData,rf/100) %>% na.omit
+ExcessReturns <- ExcessReturns.temp - matrix(rep(ExcessReturns.temp$rf/100,ncol(ExcessReturns.temp)),ncol=ncol(ExcessReturns.temp),byrow = T)
+
+ExcessReturns.Avg.Daily <- apply(ExcessReturns,2,mean)[-ncol(ExcessReturns)]
+ExcessReturns.Avg.ann <- ExcessReturns.Avg.Daily * 250
+
+SRSq <- t(ExcessReturns.Avg.Daily) %*% chol2inv(chol(CovResults$Covariance)) %*% ExcessReturns.Avg.Daily
+SR <- sqrt(SRSq)*sqrt(250)
+ClientSD.Ann <- 0.15
+ClientSD.Daily <- ClientSD.Ann/sqrt(250)
+ClientVar.Daily <- ClientSD.Daily^2
+
+mveKForSd <- sqrt(ClientVar.Daily/SRSq)
+
+weightsOfAssets <- lapply(mveKForSd,function(k){k*chol2inv(chol(CovResults$Covariance))%*%ExcessReturns.Avg.Daily})
+
+temp <- t(weightsOfAssets[[1]])
+colnames(temp) <- colnames(ExcessReturns[,-ncol(ExcessReturns)])
+kable(temp)
+weightsOfAssets.std <- lapply(weightsOfAssets,function(weightForSd){weightForSd/sum(weightForSd)})
+returns <- lapply(weightsOfAssets,function(assetweight){t(assetweight)%*%ExcessReturns.Avg.Daily})
+returns[[1]]*250
+```
+$Sharpe Ratio_{MVE} = (R_{avg,exc})' \Sigma R_{avg,exc}$   
+where  
+$R_{avg,exc}$ is the average excess returns of the assets  
+$\Sigma$ is the covariance matrix of the assets
+
+
+```{r}
+#Tactical
+dailyReturnOfPortfolio <- ExcessReturns[,-ncol(ExcessReturns)]%*%weightsOfAssets[[1]]
+dailyReturnOfPortfolio.xts <- xts(dailyReturnOfPortfolio,index(ExcessReturns))
+
+strat2 <- do.call(rbind,Strat2.HikePeriods.Daily[hikePeriodNames])
+compdata <- merge.xts(dailyReturnOfPortfolio.xts,strat2[,1])%>%na.omit
+cor(compdata)
+```
+ 
